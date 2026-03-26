@@ -1,0 +1,462 @@
+[[patterns]]
+name = "Swagger JSON"
+value = "/swagger.json"
+category = "ApiDocPath"
+description = "Common Swagger definition path"
+
+[[patterns]]
+name = "AWS WAF Blocked"
+value = "aws waf blocked"
+category = "WafKeyword"
+description = "AWS WAF block response"
+
+[[patterns]]
+name = "Fetch API"
+value = "fetch\\s*\\(\\s*[\"'`](/[^\"'`\\s]{3,})[\"'`]"
+category = "JsEndpoint"
+description = "Fetch API call"
+
+[[patterns]]
+name = "Apache"
+value = "apache"
+category = "TechSignature"
+description = "Apache web server"
+
+[[patterns]]
+name = "SQL Syntax Error"
+value = "sql syntax"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL MySQL"
+value = "mysql"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL PostgreSQL"
+value = "postgresql"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL SQLite"
+value = "sqlite"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL Oracle"
+value = "oracle"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL Oracle ORA"
+value = "ora-"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL DB2 SQLCODE"
+value = "sqlcode"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL DB2 Error"
+value = "db2 sql error"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL Syntax"
+value = "syntax error"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL Unclosed"
+value = "unclosed quotation"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL Unterminated"
+value = "unterminated string"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL OLE DB"
+value = "microsoft ole db"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL ODBC"
+value = "odbc"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL JDBC"
+value = "jdbc"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL SQLSTATE"
+value = "sqlstate"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL PG_QUERY"
+value = "pg_query"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL PG_EXEC"
+value = "pg_exec"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL MYSQL_FETCH"
+value = "mysql_fetch"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL MYSQLI"
+value = "mysqli"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL Near"
+value = "near \""
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL At Line"
+value = "at line"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL You have an error"
+value = "you have an error in your sql"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL SQLite Token"
+value = "unrecognized token:"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SQL SQLite Malformed"
+value = "database disk image is malformed"
+category = "ErrorKeyword"
+description = "sql"
+
+[[patterns]]
+name = "SSTI 49"
+value = "49"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "SSTI 7777777"
+value = "7777777"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "SSTI Jinja2"
+value = "jinja2"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "SSTI Twig"
+value = "twig"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "SSTI Freemarker"
+value = "freemarker"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "SSTI ERB"
+value = "erb"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "SSTI Velocity"
+value = "velocity"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "SSTI Smarty"
+value = "smarty"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "SSTI Mako"
+value = "mako"
+category = "ErrorKeyword"
+description = "ssti"
+
+[[patterns]]
+name = "Path Traversal Root"
+value = "root:x:0:0"
+category = "ErrorKeyword"
+description = "path"
+
+[[patterns]]
+name = "Path Traversal Ext"
+value = "[extensions]"
+category = "ErrorKeyword"
+description = "path"
+
+[[patterns]]
+name = "Path Traversal Daemon"
+value = "daemon:"
+category = "ErrorKeyword"
+description = "path"
+
+[[patterns]]
+name = "Path Traversal Nobody"
+value = "nobody:"
+category = "ErrorKeyword"
+description = "path"
+
+[[patterns]]
+name = "CMD UID"
+value = "uid="
+category = "ErrorKeyword"
+description = "cmd"
+
+[[patterns]]
+name = "CMD GID"
+value = "gid="
+category = "ErrorKeyword"
+description = "cmd"
+
+[[patterns]]
+name = "CMD Groups"
+value = "groups="
+category = "ErrorKeyword"
+description = "cmd"
+
+[[patterns]]
+name = "CMD PATH"
+value = "PATH="
+category = "ErrorKeyword"
+description = "cmd"
+
+[[patterns]]
+name = "LDAP Search"
+value = "ldap_search"
+category = "ErrorKeyword"
+description = "ldap"
+
+[[patterns]]
+name = "LDAP Bind"
+value = "ldap_bind"
+category = "ErrorKeyword"
+description = "ldap"
+
+[[patterns]]
+name = "LDAP DN Syntax"
+value = "invalid dn syntax"
+category = "ErrorKeyword"
+description = "ldap"
+
+[[patterns]]
+name = "LDAP Bad Filter"
+value = "bad search filter"
+category = "ErrorKeyword"
+description = "ldap"
+
+[[patterns]]
+name = "LDAP Error"
+value = "ldap error"
+category = "ErrorKeyword"
+description = "ldap"
+
+[[patterns]]
+name = "LDAP Class Violation"
+value = "object class violation"
+category = "ErrorKeyword"
+description = "ldap"
+
+[[patterns]]
+name = "LDAP Err"
+value = "ldaperr"
+category = "ErrorKeyword"
+description = "ldap"
+
+[[patterns]]
+name = "XPath"
+value = "xpath"
+category = "ErrorKeyword"
+description = "xpath"
+
+[[patterns]]
+name = "XPath XMLDoc"
+value = "xmldoc"
+category = "ErrorKeyword"
+description = "xpath"
+
+[[patterns]]
+name = "SSRF AMI"
+value = "ami-id"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF Instance"
+value = "instance-id"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF Instance Type"
+value = "instance-type"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF IAM"
+value = "iam"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF Sec Credentials"
+value = "security-credentials"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF computeMetadata"
+value = "computeMetadata"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF Google"
+value = "google"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF Metadata"
+value = "metadata/instance"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF 127.0.0.1"
+value = "127.0.0.1"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF Localhost"
+value = "localhost"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF Redis"
+value = "redis"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF Memcached"
+value = "memcached"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "SSRF MongoDB"
+value = "mongodb"
+category = "ErrorKeyword"
+description = "ssrf"
+
+[[patterns]]
+name = "XPath Error"
+value = "xpatherror"
+category = "ErrorKeyword"
+description = "xpath"
+
+[[patterns]]
+name = "XPath Invalid"
+value = "invalid expression"
+category = "ErrorKeyword"
+description = "xpath"
+
+[[patterns]]
+name = "XPath NodeList"
+value = "xmlnodelist"
+category = "ErrorKeyword"
+description = "xpath"
+
+[[patterns]]
+name = "XPath SelectNodes"
+value = "selectnodes"
+category = "ErrorKeyword"
+description = "xpath"
+
+[[patterns]]
+name = "XPath SelectSingleNode"
+value = "selectsinglenode"
+category = "ErrorKeyword"
+description = "xpath"
+
+[[patterns]]
+name = "Git HEAD"
+value = "/.git/HEAD"
+category = "HiddenPath"
+description = "Git metadata"
+
+[[patterns]]
+name = "Environment variables"
+value = "/.env"
+category = "HiddenPath"
+description = "Environment variables file"
+
+[[patterns]]
+name = "WordPress JSON API"
+value = "/wp-json/"
+category = "HiddenPath"
+description = "WordPress JSON API"
+
+[[patterns]]
+name = "Generic API"
+value = "/api/"
+category = "HiddenPath"
+description = "Generic API path"
+
+[[patterns]]
+name = "Security txt"
+value = "/.well-known/security.txt"
+category = "HiddenPath"
+description = "Security policy file"
+
