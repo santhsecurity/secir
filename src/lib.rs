@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! # secir — Security Intermediate Representation
 //!
 //! The universal type vocabulary for security scanning tools.
