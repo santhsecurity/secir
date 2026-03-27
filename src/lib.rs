@@ -44,10 +44,6 @@
 //! - [`plugin::RateLimiter`] — controls host-level throttling
 //! - [`plugin::ScanScheduler`] — schedules recurring or queued scans
 
-
-
-
-
 pub mod compose;
 pub mod error;
 pub mod error_catalog;
