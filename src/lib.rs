@@ -44,9 +44,9 @@
 //! - [`plugin::RateLimiter`] — controls host-level throttling
 //! - [`plugin::ScanScheduler`] — schedules recurring or queued scans
 
-#![warn(clippy::pedantic)]
-#![allow(clippy::must_use_candidate)]
-#![allow(clippy::needless_pass_by_value)]
+
+
+
 
 pub mod compose;
 pub mod error;
