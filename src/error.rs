@@ -3,7 +3,7 @@
 //! All errors are centralized here so that crate boundaries can propagate
 //! a single `karyx_core::Error` type through the `?` operator.
 
-use crate::error_catalog::{ErrorCatalogEntry, entry_for};
+use crate::error_catalog::{entry_for, ErrorCatalogEntry};
 
 /// Common result type used across Karyx crates.
 pub type Result<T> = std::result::Result<T, Error>;

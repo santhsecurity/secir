@@ -48,22 +48,21 @@
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::needless_pass_by_value)]
 
-
 pub mod compose;
-pub mod patterns;
 pub mod error;
 pub mod error_catalog;
 pub mod finding;
 pub mod matcher;
+pub mod patterns;
 pub mod plugin;
 pub mod severity;
 pub mod template;
 pub mod transport;
 
 pub use error::{Error, Result};
-pub use error_catalog::{ALL_ERROR_CATALOG, ErrorCatalogEntry, entry_for as error_catalog_entry};
+pub use error_catalog::{entry_for as error_catalog_entry, ErrorCatalogEntry, ALL_ERROR_CATALOG};
 pub use finding::{Finding, FindingKind};
-pub use matcher::{Match, MatchDatabase, ResponseData, select_response_part};
+pub use matcher::{select_response_part, Match, MatchDatabase, ResponseData};
 pub use severity::Severity;
 pub use template::{
     AttackType, CodeRequestDef, DnsRequestDef, Encoding, ExtractorDef, ExtractorKind,

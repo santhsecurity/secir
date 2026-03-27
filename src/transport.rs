@@ -72,6 +72,10 @@ pub struct TemplateContext {
     pub template_id: String,
 
     /// Extracted and template-defined variables available for substitution.
+    ///
+    /// Design constraint: execution state is isolated per `(target, template_id)`.
+    /// Independent templates therefore cannot read each other's extracted values
+    /// unless they are composed into one template via `imports`/`call`.
     pub variables: HashMap<String, String>,
 }
 

@@ -271,14 +271,21 @@ impl Template {
     ///
     /// Returns a template validation error when the flow expression is invalid.
     pub fn parse_flow(&self) -> crate::Result<Option<FlowExpression>> {
-        self.flow
+        let parsed = self
+            .flow
             .as_deref()
             .map(FlowExpression::parse)
             .transpose()
             .map_err(|reason| crate::Error::TemplateValidation {
                 id: self.id.clone(),
                 reason,
-            })
+            })?;
+
+        if let Some(expression) = &parsed {
+            self.validate_flow_expression(expression)?;
+        }
+
+        Ok(parsed)
     }
 
     /// Resolve this template against parent templates referenced via `extends`.
@@ -312,7 +319,10 @@ impl Template {
             stack.push(self.id.clone());
             return Err(crate::Error::TemplateValidation {
                 id: self.id.clone(),
-                reason: format!("template inheritance cycle detected: {}", stack.join(" -> ")),
+                reason: format!(
+                    "template inheritance cycle detected: {}",
+                    stack.join(" -> ")
+                ),
             });
         }
 
@@ -375,9 +385,16 @@ impl Template {
         resolved.parse_flow()?;
         Ok(resolved)
     }
+
+    fn validate_flow_expression(&self, expression: &FlowExpression) -> crate::Result<()> {
+        expression.validate_for_template(self)
+    }
 }
 
-fn merge_maps<T: Clone>(parent: &HashMap<String, T>, child: &HashMap<String, T>) -> HashMap<String, T> {
+fn merge_maps<T: Clone>(
+    parent: &HashMap<String, T>,
+    child: &HashMap<String, T>,
+) -> HashMap<String, T> {
     let mut merged = parent.clone();
     merged.extend(child.clone());
     merged
@@ -489,6 +506,157 @@ impl FlowExpression {
         parser.expect_end()?;
         Ok(expression)
     }
+
+    /// Return whether this flow expression allows `request_index` to run given
+    /// the currently known per-request match results.
+    pub fn allows_request(
+        &self,
+        request_index: usize,
+        request_results: &HashMap<usize, bool>,
+    ) -> bool {
+        if !self.mentions_request(request_index) {
+            return false;
+        }
+
+        match self.request_gate_value(request_index, request_results) {
+            FlowGate::Known(result) => result,
+            FlowGate::Pending => false,
+        }
+    }
+
+    /// Validate that this flow expression only references the current
+    /// template's protocol and in-range request numbers.
+    pub fn validate_for_template(&self, template: &Template) -> crate::Result<()> {
+        self.validate_calls(template)
+    }
+
+    fn validate_calls(&self, template: &Template) -> crate::Result<()> {
+        match self {
+            Self::Call { protocol, request } => {
+                let expected_protocol = template.protocol.name();
+                if !protocol.eq_ignore_ascii_case(expected_protocol) {
+                    return Err(crate::Error::TemplateValidation {
+                        id: template.id.clone(),
+                        reason: format!(
+                            "flow references protocol '{protocol}', but template protocol is '{expected_protocol}'. Use {expected_protocol}(N) or move the request to a {protocol} template."
+                        ),
+                    });
+                }
+
+                if *request == 0 {
+                    return Err(crate::Error::TemplateValidation {
+                        id: template.id.clone(),
+                        reason: "flow request indices are 1-based. Replace '(0)' with '(1)' for the first request.".to_string(),
+                    });
+                }
+
+                if *request > template.requests.len() {
+                    return Err(crate::Error::TemplateValidation {
+                        id: template.id.clone(),
+                        reason: format!(
+                            "flow references request {request}, but template defines only {} request(s). Fix the flow expression or add the missing request.",
+                            template.requests.len()
+                        ),
+                    });
+                }
+                Ok(())
+            }
+            Self::Not(expr) => expr.validate_calls(template),
+            Self::And(left, right) | Self::Or(left, right) => {
+                left.validate_calls(template)?;
+                right.validate_calls(template)
+            }
+        }
+    }
+
+    fn mentions_request(&self, request_index: usize) -> bool {
+        match self {
+            Self::Call { request, .. } => request.saturating_sub(1) == request_index,
+            Self::Not(expr) => expr.mentions_request(request_index),
+            Self::And(left, right) | Self::Or(left, right) => {
+                left.mentions_request(request_index) || right.mentions_request(request_index)
+            }
+        }
+    }
+
+    fn request_gate_value(
+        &self,
+        request_index: usize,
+        request_results: &HashMap<usize, bool>,
+    ) -> FlowGate {
+        match self {
+            Self::Call { request, .. } => {
+                if request.saturating_sub(1) == request_index {
+                    FlowGate::Known(true)
+                } else {
+                    FlowGate::Pending
+                }
+            }
+            Self::Not(expr) => match expr.request_gate_value(request_index, request_results) {
+                FlowGate::Known(result) => FlowGate::Known(!result),
+                FlowGate::Pending => FlowGate::Pending,
+            },
+            Self::And(left, right) => {
+                if left.mentions_request(request_index) {
+                    left.request_gate_value(request_index, request_results)
+                } else if right.mentions_request(request_index) {
+                    match left.evaluate(request_results) {
+                        FlowGate::Known(true) => {
+                            right.request_gate_value(request_index, request_results)
+                        }
+                        FlowGate::Known(false) => FlowGate::Known(false),
+                        FlowGate::Pending => FlowGate::Pending,
+                    }
+                } else {
+                    FlowGate::Known(false)
+                }
+            }
+            Self::Or(left, right) => {
+                if left.mentions_request(request_index) {
+                    left.request_gate_value(request_index, request_results)
+                } else if right.mentions_request(request_index) {
+                    match left.evaluate(request_results) {
+                        FlowGate::Known(true) => FlowGate::Known(false),
+                        FlowGate::Known(false) => {
+                            right.request_gate_value(request_index, request_results)
+                        }
+                        FlowGate::Pending => FlowGate::Pending,
+                    }
+                } else {
+                    FlowGate::Known(false)
+                }
+            }
+        }
+    }
+
+    fn evaluate(&self, request_results: &HashMap<usize, bool>) -> FlowGate {
+        match self {
+            Self::Call { request, .. } => request_results
+                .get(&request.saturating_sub(1))
+                .copied()
+                .map_or(FlowGate::Pending, FlowGate::Known),
+            Self::Not(expr) => match expr.evaluate(request_results) {
+                FlowGate::Known(result) => FlowGate::Known(!result),
+                FlowGate::Pending => FlowGate::Pending,
+            },
+            Self::And(left, right) => match left.evaluate(request_results) {
+                FlowGate::Known(false) => FlowGate::Known(false),
+                FlowGate::Known(true) => right.evaluate(request_results),
+                FlowGate::Pending => FlowGate::Pending,
+            },
+            Self::Or(left, right) => match left.evaluate(request_results) {
+                FlowGate::Known(true) => FlowGate::Known(true),
+                FlowGate::Known(false) => right.evaluate(request_results),
+                FlowGate::Pending => FlowGate::Pending,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlowGate {
+    Known(bool),
+    Pending,
 }
 
 impl fmt::Display for FlowExpression {
@@ -604,16 +772,15 @@ impl<'a> FlowParser<'a> {
 
     fn parse_number(&mut self) -> std::result::Result<usize, String> {
         let start = self.pos;
-        while self
-            .chars
-            .get(self.pos)
-            .is_some_and(char::is_ascii_digit)
-        {
+        while self.chars.get(self.pos).is_some_and(char::is_ascii_digit) {
             self.pos += 1;
         }
 
         if start == self.pos {
-            return Err(format!("expected request index at byte {} in '{}'", self.pos, self.input));
+            return Err(format!(
+                "expected request index at byte {} in '{}'",
+                self.pos, self.input
+            ));
         }
 
         self.chars[start..self.pos]
@@ -636,7 +803,11 @@ impl<'a> FlowParser<'a> {
     }
 
     fn skip_ws(&mut self) {
-        while self.chars.get(self.pos).is_some_and(|ch| ch.is_whitespace()) {
+        while self
+            .chars
+            .get(self.pos)
+            .is_some_and(|ch| ch.is_whitespace())
+        {
             self.pos += 1;
         }
     }
@@ -1023,6 +1194,52 @@ mod tests {
     }
 
     #[test]
+    fn flow_validation_rejects_wrong_protocol() {
+        let template = Template {
+            id: "bad-flow-protocol".to_string(),
+            ir_version: default_ir_version(),
+            extends: None,
+            imports: Vec::new(),
+            info: TemplateInfo {
+                name: "Bad Flow Protocol".to_string(),
+                author: vec![],
+                severity: Severity::Info,
+                description: None,
+                reference: vec![],
+                tags: vec![],
+                metadata: TemplateMeta::default(),
+            },
+            requests: vec![RequestDef::default()],
+            protocol: Protocol::Http,
+            self_contained: false,
+            variables: HashMap::new(),
+            cli_variables: HashMap::new(),
+            source_path: None,
+            flow: Some("dns(1)".to_string()),
+            workflows: Vec::new(),
+            karyx_extensions: HashMap::new(),
+            parallel_groups: Vec::new(),
+        };
+
+        let error = template.parse_flow().unwrap_err().to_string();
+        assert!(error.contains("template protocol is 'http'"));
+    }
+
+    #[test]
+    fn flow_allows_request_uses_prior_results() {
+        let flow = FlowExpression::parse("http(1) && http(2)").unwrap();
+
+        assert!(flow.allows_request(0, &HashMap::new()));
+        assert!(!flow.allows_request(1, &HashMap::new()));
+
+        let prior = HashMap::from([(0usize, true)]);
+        assert!(flow.allows_request(1, &prior));
+
+        let prior = HashMap::from([(0usize, false)]);
+        assert!(!flow.allows_request(1, &prior));
+    }
+
+    #[test]
     fn resolve_template_inheritance_merges_parent_fields() {
         let parent = Template {
             id: "base".to_string(),
@@ -1060,10 +1277,7 @@ mod tests {
             source_path: Some("base.yaml".to_string()),
             flow: Some("dns(1)".to_string()),
             workflows: vec![Workflow { steps: vec![] }],
-            karyx_extensions: HashMap::from([(
-                "base".to_string(),
-                serde_json::Value::Bool(true),
-            )]),
+            karyx_extensions: HashMap::from([("base".to_string(), serde_json::Value::Bool(true))]),
             parallel_groups: vec![ParallelGroup {
                 request_indices: vec![0],
             }],
@@ -1102,10 +1316,7 @@ mod tests {
             source_path: None,
             flow: None,
             workflows: Vec::new(),
-            karyx_extensions: HashMap::from([(
-                "child".to_string(),
-                serde_json::Value::Bool(true),
-            )]),
+            karyx_extensions: HashMap::from([("child".to_string(), serde_json::Value::Bool(true))]),
             parallel_groups: Vec::new(),
         };
 
@@ -1121,7 +1332,10 @@ mod tests {
         assert_eq!(resolved.info.severity, Severity::High);
         assert_eq!(resolved.requests.len(), 1);
         assert_eq!(resolved.protocol, Protocol::Dns);
-        assert_eq!(resolved.variables.get("shared").map(String::as_str), Some("child"));
+        assert_eq!(
+            resolved.variables.get("shared").map(String::as_str),
+            Some("child")
+        );
         assert_eq!(resolved.flow.as_deref(), Some("dns(1)"));
         assert_eq!(resolved.parallel_groups.len(), 1);
         assert_eq!(resolved.imports.len(), 2);

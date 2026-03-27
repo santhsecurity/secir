@@ -22,7 +22,8 @@ pub const TEMPLATE_PARSE: ErrorCatalogEntry = ErrorCatalogEntry {
 pub const TEMPLATE_VALIDATION: ErrorCatalogEntry = ErrorCatalogEntry {
     code: "KRX-002",
     explanation: "A template parsed successfully but failed semantic validation.",
-    suggested_fix: "Review the template's required metadata, protocol fields, and matcher structure.",
+    suggested_fix:
+        "Review the template's required metadata, protocol fields, and matcher structure.",
 };
 
 pub const PATTERN_COMPILE: ErrorCatalogEntry = ErrorCatalogEntry {
@@ -40,7 +41,8 @@ pub const TRANSPORT: ErrorCatalogEntry = ErrorCatalogEntry {
 pub const IO: ErrorCatalogEntry = ErrorCatalogEntry {
     code: "KRX-005",
     explanation: "Karyx could not read from or write to a filesystem or stream resource.",
-    suggested_fix: "Verify the path exists and that Karyx has the required permissions and disk access.",
+    suggested_fix:
+        "Verify the path exists and that Karyx has the required permissions and disk access.",
 };
 
 pub const YAML: ErrorCatalogEntry = ErrorCatalogEntry {
@@ -58,7 +60,8 @@ pub const JSON: ErrorCatalogEntry = ErrorCatalogEntry {
 pub const DNS_RESOLUTION: ErrorCatalogEntry = ErrorCatalogEntry {
     code: "KRX-008",
     explanation: "DNS resolution failed for the target hostname.",
-    suggested_fix: "Check your network connection and DNS configuration, or verify the hostname exists.",
+    suggested_fix:
+        "Check your network connection and DNS configuration, or verify the hostname exists.",
 };
 
 pub const TIMEOUT: ErrorCatalogEntry = ErrorCatalogEntry {

@@ -226,7 +226,10 @@ impl PluginRegistry {
 
     /// Get all loaded plugin metadata.
     pub fn list_plugins(&self) -> Vec<&PluginMetadata> {
-        self.plugins.values().map(|plugin| &plugin.metadata).collect()
+        self.plugins
+            .values()
+            .map(|plugin| &plugin.metadata)
+            .collect()
     }
 
     /// Get all plugins that handle a specific protocol.
@@ -301,10 +304,13 @@ impl PluginRegistry {
             return Err(PluginLoadError::NotFound(path.to_path_buf()));
         }
 
-        let contents =
-            std::fs::read_to_string(path).map_err(|error| PluginLoadError::Io(error.to_string()))?;
+        let contents = std::fs::read_to_string(path)
+            .map_err(|error| PluginLoadError::Io(error.to_string()))?;
 
-        let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or_default();
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default();
         let mut metadata = match extension {
             "toml" => toml::from_str::<PluginMetadata>(&contents)
                 .map_err(|error| PluginLoadError::InvalidFormat(error.to_string()))?,
@@ -350,7 +356,10 @@ impl PluginRegistry {
         }
 
         let version_parts: Vec<_> = metadata.version.split('.').collect();
-        if version_parts.len() < 3 || version_parts.iter().any(|part| part.parse::<u64>().is_err())
+        if version_parts.len() < 3
+            || version_parts
+                .iter()
+                .any(|part| part.parse::<u64>().is_err())
         {
             return Err(PluginLoadError::ValidationFailed(format!(
                 "invalid semantic version '{}'",
@@ -461,7 +470,10 @@ protocols = ["http", "dns"]
 
         assert_eq!(metadata.id, "example-plugin");
         assert_eq!(metadata.protocols, vec!["http", "dns"]);
-        assert!(!registry.get("example-plugin").unwrap().has_dynamic_library());
+        assert!(!registry
+            .get("example-plugin")
+            .unwrap()
+            .has_dynamic_library());
     }
 
     #[test]

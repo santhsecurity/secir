@@ -160,7 +160,11 @@ impl ResponseData {
         if let Ok(s) = std::str::from_utf8(&self.body) {
             return s;
         }
-        self.body_text.get_or_init(|| String::from_utf8_lossy(&self.body).into_owned().into_boxed_str())
+        self.body_text.get_or_init(|| {
+            String::from_utf8_lossy(&self.body)
+                .into_owned()
+                .into_boxed_str()
+        })
     }
 
     /// Borrow the serialized headers as UTF-8 text, or an empty string when decoding fails.
@@ -174,7 +178,8 @@ impl ResponseData {
         if let Ok(s) = std::str::from_utf8(bytes) {
             return s;
         }
-        self.all_text.get_or_init(|| String::from_utf8_lossy(bytes).into_owned().into_boxed_str())
+        self.all_text
+            .get_or_init(|| String::from_utf8_lossy(bytes).into_owned().into_boxed_str())
     }
 
     /// Release the combined headers-and-body buffer to free memory.

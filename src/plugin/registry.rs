@@ -1,7 +1,7 @@
 use crate::plugin::traits::{
-    Authenticator, CustomExtractor, CustomMatcher, CustomReporter, CustomTransform,
-    DnsResolver, FindingStore, Plugin, PluginCapability, PostProcessor, ProtocolHandler,
-    RateLimiter, ScanScheduler, TargetDiscovery, TemplateCompiler,
+    Authenticator, CustomExtractor, CustomMatcher, CustomReporter, CustomTransform, DnsResolver,
+    FindingStore, Plugin, PluginCapability, PostProcessor, ProtocolHandler, RateLimiter,
+    ScanScheduler, TargetDiscovery, TemplateCompiler,
 };
 use rustc_hash::FxHashMap;
 
@@ -223,19 +223,19 @@ fn normalize_extension(extension: &str) -> String {
         .to_ascii_lowercase()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::plugin::ScanMetadata;
     use crate::{
-        Finding, Result, Template, FindingKind, Protocol, RequestDef, Severity, TemplateInfo, TemplateMeta,
+        Finding, FindingKind, Protocol, RequestDef, Result, Severity, Template, TemplateInfo,
+        TemplateMeta,
     };
     use async_trait::async_trait;
     use chrono::Utc;
     use std::collections::HashMap;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     struct MockProtocolHandler {
         protocol: &'static str,
@@ -286,7 +286,11 @@ mod tests {
             let matched = values
                 .iter()
                 .any(|value| data.windows(value.len()).any(|w| w == value.as_bytes()));
-            if negative { !matched } else { matched }
+            if negative {
+                !matched
+            } else {
+                matched
+            }
         }
 
         fn matched_values(&self, data: &[u8], values: &[String]) -> Vec<String> {

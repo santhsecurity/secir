@@ -398,15 +398,15 @@ impl ConditionOperator {
 
         match self {
             Self::Eq => compare_values(left, right) == Some(Ordering::Equal),
-            Self::Ne => compare_values(left, right).is_some_and(|ordering| ordering != Ordering::Equal),
+            Self::Ne => {
+                compare_values(left, right).is_some_and(|ordering| ordering != Ordering::Equal)
+            }
             Self::Lt => compare_values(left, right) == Some(Ordering::Less),
-            Self::Le => compare_values(left, right).is_some_and(|ordering| {
-                matches!(ordering, Ordering::Less | Ordering::Equal)
-            }),
+            Self::Le => compare_values(left, right)
+                .is_some_and(|ordering| matches!(ordering, Ordering::Less | Ordering::Equal)),
             Self::Gt => compare_values(left, right) == Some(Ordering::Greater),
-            Self::Ge => compare_values(left, right).is_some_and(|ordering| {
-                matches!(ordering, Ordering::Greater | Ordering::Equal)
-            }),
+            Self::Ge => compare_values(left, right)
+                .is_some_and(|ordering| matches!(ordering, Ordering::Greater | Ordering::Equal)),
         }
     }
 }
@@ -534,10 +534,8 @@ impl<'a> ConditionParser<'a> {
         loop {
             self.skip_ws();
             if self.consume_str("||") {
-                expression = ConditionExpression::Or(
-                    Box::new(expression),
-                    Box::new(self.parse_and()?),
-                );
+                expression =
+                    ConditionExpression::Or(Box::new(expression), Box::new(self.parse_and()?));
             } else {
                 return Ok(expression);
             }
@@ -657,9 +655,10 @@ impl<'a> ConditionParser<'a> {
 
     fn parse_identifier(&mut self) -> Result<String, String> {
         let start = self.pos;
-        while self.peek_char().is_some_and(|ch| {
-            ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')
-        }) {
+        while self
+            .peek_char()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+        {
             self.pos += 1;
         }
 

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::matchers::{
-    ExtractorDef, MatchConfig, MatcherCondition, MatcherDef, default_matcher_condition,
+    default_matcher_condition, ExtractorDef, MatchConfig, MatcherCondition, MatcherDef,
 };
 
 /// Protocol-specific request type for the v2 template IR.

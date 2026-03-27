@@ -1,7 +1,7 @@
 // Pattern system for secir
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Errors encountered while loading pattern files.
 #[derive(Debug)]
@@ -71,9 +71,11 @@ impl Default for PatternSet {
         // Parse embedded TOML; use empty set if somehow malformed (defensive)
         let config: PatternConfig = toml::from_str(DEFAULTS_TOML).unwrap_or_else(|e| {
             eprintln!("Warning: failed to parse embedded defaults.toml: {e}");
-            PatternConfig { patterns: Vec::new() }
+            PatternConfig {
+                patterns: Vec::new(),
+            }
         });
-        
+
         let mut set = PatternSet {
             js_endpoints: Vec::new(),
             api_doc_paths: Vec::new(),
@@ -90,7 +92,6 @@ impl Default for PatternSet {
 }
 
 impl PatternSet {
-
     fn add_pattern(&mut self, pattern: Pattern) {
         match pattern.category {
             PatternCategory::JsEndpoint => self.js_endpoints.push(pattern),
@@ -155,14 +156,14 @@ impl PatternSet {
         }
         (set, errors)
     }
-pub fn patterns_for(&self, category: PatternCategory) -> &[Pattern] {
-    match category {
-        PatternCategory::JsEndpoint => &self.js_endpoints,
-        PatternCategory::ApiDocPath => &self.api_doc_paths,
-        PatternCategory::WafKeyword => &self.waf_keywords,
-        PatternCategory::ErrorKeyword => &self.error_keywords,
-        PatternCategory::TechSignature => &self.tech_signatures,
-        PatternCategory::HiddenPath => &self.hidden_paths,
+    pub fn patterns_for(&self, category: PatternCategory) -> &[Pattern] {
+        match category {
+            PatternCategory::JsEndpoint => &self.js_endpoints,
+            PatternCategory::ApiDocPath => &self.api_doc_paths,
+            PatternCategory::WafKeyword => &self.waf_keywords,
+            PatternCategory::ErrorKeyword => &self.error_keywords,
+            PatternCategory::TechSignature => &self.tech_signatures,
+            PatternCategory::HiddenPath => &self.hidden_paths,
+        }
     }
-}
 }
