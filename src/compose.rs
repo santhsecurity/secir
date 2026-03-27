@@ -83,13 +83,18 @@ pub struct ComposeTemplate {
 /// Metadata for a composition template.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComposeInfo {
+    /// Name of the composition (e.g. "detect-and-exploit").
     pub name: String,
+    /// Authors who created this composition.
     #[serde(default)]
     pub author: Vec<String>,
+    /// Overall severity of findings from this composition.
     #[serde(default)]
     pub severity: crate::Severity,
+    /// Human-readable description of what this composition does.
     #[serde(default)]
     pub description: Option<String>,
+    /// Tags for categorization and filtering.
     #[serde(default)]
     pub tags: Vec<String>,
 }
@@ -142,14 +147,19 @@ pub enum StepAction {
 /// HTTP request step configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HttpStepConfig {
+    /// HTTP method (GET, POST, etc). Defaults to GET.
     #[serde(default)]
     pub method: Option<String>,
+    /// URL paths to request. Multiple paths run in sequence.
     #[serde(default)]
     pub path: Vec<String>,
+    /// Additional HTTP headers to send.
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    /// Request body content.
     #[serde(default)]
     pub body: Option<String>,
+    /// Matchers to apply against the response (word, regex, status, etc).
     #[serde(default)]
     pub matchers: Vec<serde_json::Value>,
     #[serde(default)]

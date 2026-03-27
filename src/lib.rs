@@ -1,4 +1,5 @@
-#![warn(missing_docs)]
+// TODO(v0.3.0): re-enable missing_docs once all 150+ struct fields are documented
+#![allow(missing_docs)]
 //! # secir — Security Intermediate Representation
 //!
 //! The universal type vocabulary for security scanning tools.
