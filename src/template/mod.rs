@@ -1145,7 +1145,11 @@ mod tests {
                 tags: vec![],
                 metadata: TemplateMeta::default(),
             },
-            requests: vec![RequestDef::default(), RequestDef::default(), RequestDef::default()],
+            requests: vec![
+                RequestDef::default(),
+                RequestDef::default(),
+                RequestDef::default(),
+            ],
             protocol: Protocol::Http,
             self_contained: false,
             variables: HashMap::new(),
