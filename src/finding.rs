@@ -1,4 +1,8 @@
 //! Finding types and helpers used to represent scan results across the runtime.
+//!
+//! This module provides the core data structures for security scan results,
+//! including the [`Finding`] struct which represents a confirmed vulnerability
+//! or detection, and [`FindingKind`] for classification.
 
 use crate::transport::RequestSpec;
 use crate::{Severity, TemplateId};
@@ -104,6 +108,60 @@ pub struct Finding {
 }
 
 /// Calculate statistical confidence score based on matcher types and hit ratios.
+///
+/// The confidence score is a heuristic value between 0.0 and 1.0 that indicates
+/// how reliable a template's findings are expected to be. Higher confidence
+/// is assigned to templates with:
+///
+/// - Multiple AND conditions combined with extractors (0.95)
+/// - Status + word matchers with AND condition (0.85)
+/// - Regex patterns with capture groups (0.80)
+/// - Multiple word matchers with AND condition (0.70)
+/// - Simple word matchers (0.50)
+///
+/// # Arguments
+///
+/// * `template` - The template to analyze for confidence scoring
+///
+/// # Returns
+///
+/// A confidence score between 0.0 and 1.0
+///
+/// # Example
+///
+/// ```
+/// use secir::{Template, TemplateInfo, Severity, calculate_confidence};
+/// use std::collections::HashMap;
+///
+/// let template = Template {
+///     id: "test-template".to_string(),
+///     ir_version: 1,
+///     extends: None,
+///     imports: vec![],
+///     info: TemplateInfo {
+///         name: "Test".to_string(),
+///         author: vec![],
+///         severity: Severity::Info,
+///         description: None,
+///         reference: vec![],
+///         tags: vec!["tech".to_string()],
+///         metadata: Default::default(),
+///     },
+///     requests: vec![],
+///     protocol: secir::Protocol::Http,
+///     self_contained: false,
+///     variables: HashMap::new(),
+///     cli_variables: HashMap::new(),
+///     source_path: None,
+///     flow: None,
+///     workflows: vec![],
+///     karyx_extensions: HashMap::new(),
+///     parallel_groups: vec![],
+/// };
+///
+/// let confidence = calculate_confidence(&template);
+/// assert!((0.0..=1.0).contains(&confidence));
+/// ```
 pub fn calculate_confidence(template: &crate::Template) -> f64 {
     let mut has_extractor = false;
     let mut has_word = false;
@@ -172,6 +230,11 @@ pub fn calculate_confidence(template: &crate::Template) -> f64 {
     0.5
 }
 
+/// Internal metadata for replaying and verifying findings.
+///
+/// This struct stores the necessary information to reproduce a finding
+/// for verification purposes, including the exact request specification
+/// and any variables that were in scope.
 #[derive(Debug, Clone)]
 pub struct FindingVerification {
     pub request_spec: RequestSpec,
