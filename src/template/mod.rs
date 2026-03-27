@@ -1145,20 +1145,20 @@ mod tests {
                 tags: vec![],
                 metadata: TemplateMeta::default(),
             },
-            requests: vec![RequestDef::default()],
+            requests: vec![RequestDef::default(), RequestDef::default(), RequestDef::default()],
             protocol: Protocol::Http,
             self_contained: false,
             variables: HashMap::new(),
             cli_variables: HashMap::new(),
             source_path: None,
-            flow: Some("http(1) && (!dns(2) || websocket(3))".to_string()),
+            flow: Some("http(1) && (!http(2) || http(3))".to_string()),
             workflows: Vec::new(),
             karyx_extensions: HashMap::new(),
             parallel_groups: Vec::new(),
         };
 
         let flow = template.parse_flow().unwrap().unwrap();
-        assert_eq!(flow.to_string(), "(http(1) && (!(dns(2)) || websocket(3)))");
+        assert_eq!(flow.to_string(), "(http(1) && (!(http(2)) || http(3)))");
     }
 
     #[test]
