@@ -15,6 +15,7 @@ pub use request::*;
 use crate::Severity;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 /// Unique identifier for a template, matching Nuclei's convention.
 /// Example: "CVE-2021-44228" or "tech-detect/nginx"
@@ -263,6 +264,140 @@ impl Template {
     pub fn builder(id: &str) -> TemplateBuilder {
         TemplateBuilder::new(id)
     }
+
+    /// Parse the configured flow expression into a typed AST.
+    ///
+    /// # Errors
+    ///
+    /// Returns a template validation error when the flow expression is invalid.
+    pub fn parse_flow(&self) -> crate::Result<Option<FlowExpression>> {
+        self.flow
+            .as_deref()
+            .map(FlowExpression::parse)
+            .transpose()
+            .map_err(|reason| crate::Error::TemplateValidation {
+                id: self.id.clone(),
+                reason,
+            })
+    }
+
+    /// Resolve this template against parent templates referenced via `extends`.
+    ///
+    /// Child scalar fields override inherited values. Map-like fields merge with
+    /// child keys taking precedence. Collection fields such as requests and
+    /// workflows inherit the parent value only when the child leaves them empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns a template validation error when a parent is missing, the
+    /// inheritance chain contains a cycle, or the resolved flow expression is invalid.
+    pub fn resolve_inheritance(
+        &self,
+        templates: &HashMap<String, Template>,
+    ) -> crate::Result<Template> {
+        let mut stack = Vec::new();
+        self.resolve_inheritance_inner(templates, &mut stack)
+    }
+
+    fn resolve_inheritance_inner(
+        &self,
+        templates: &HashMap<String, Template>,
+        stack: &mut Vec<String>,
+    ) -> crate::Result<Template> {
+        let Some(parent_id) = self.extends.as_deref() else {
+            return Ok(self.clone());
+        };
+
+        if stack.iter().any(|id| id == &self.id) {
+            stack.push(self.id.clone());
+            return Err(crate::Error::TemplateValidation {
+                id: self.id.clone(),
+                reason: format!("template inheritance cycle detected: {}", stack.join(" -> ")),
+            });
+        }
+
+        let parent = templates
+            .get(parent_id)
+            .ok_or_else(|| crate::Error::TemplateValidation {
+                id: self.id.clone(),
+                reason: format!("parent template '{parent_id}' was not found"),
+            })?;
+
+        stack.push(self.id.clone());
+        let resolved_parent = parent.resolve_inheritance_inner(templates, stack)?;
+        stack.pop();
+
+        self.merge_with_parent(&resolved_parent)
+    }
+
+    fn merge_with_parent(&self, parent: &Template) -> crate::Result<Template> {
+        let protocol = if matches!(self.protocol, Protocol::Http)
+            && !matches!(parent.protocol, Protocol::Http)
+        {
+            parent.protocol
+        } else {
+            self.protocol
+        };
+
+        let resolved = Template {
+            id: self.id.clone(),
+            ir_version: self.ir_version.max(parent.ir_version),
+            extends: None,
+            imports: merge_named_items(&parent.imports, &self.imports, |item| &item.id),
+            info: self.info.clone().merge(parent.info.clone()),
+            requests: if self.requests.is_empty() {
+                parent.requests.clone()
+            } else {
+                self.requests.clone()
+            },
+            protocol,
+            self_contained: self.self_contained || parent.self_contained,
+            variables: merge_maps(&parent.variables, &self.variables),
+            cli_variables: merge_maps(&parent.cli_variables, &self.cli_variables),
+            source_path: self
+                .source_path
+                .clone()
+                .or_else(|| parent.source_path.clone()),
+            flow: self.flow.clone().or_else(|| parent.flow.clone()),
+            workflows: if self.workflows.is_empty() {
+                parent.workflows.clone()
+            } else {
+                self.workflows.clone()
+            },
+            karyx_extensions: merge_maps(&parent.karyx_extensions, &self.karyx_extensions),
+            parallel_groups: if self.parallel_groups.is_empty() {
+                parent.parallel_groups.clone()
+            } else {
+                self.parallel_groups.clone()
+            },
+        };
+
+        resolved.parse_flow()?;
+        Ok(resolved)
+    }
+}
+
+fn merge_maps<T: Clone>(parent: &HashMap<String, T>, child: &HashMap<String, T>) -> HashMap<String, T> {
+    let mut merged = parent.clone();
+    merged.extend(child.clone());
+    merged
+}
+
+fn merge_named_items<T: Clone, F>(parent: &[T], child: &[T], key: F) -> Vec<T>
+where
+    F: Fn(&T) -> &str,
+{
+    let mut merged = Vec::with_capacity(parent.len() + child.len());
+    let mut seen = std::collections::HashSet::new();
+
+    for item in parent.iter().chain(child.iter()) {
+        let name = key(item);
+        if seen.insert(name.to_string()) {
+            merged.push(item.clone());
+        }
+    }
+
+    merged
 }
 
 /// The complete intermediate representation of a parsed template.
@@ -327,6 +462,203 @@ pub struct Template {
     /// Parallel groups of requests
     #[serde(default)]
     pub parallel_groups: Vec<ParallelGroup>,
+}
+
+/// Parsed Nuclei-style flow expression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FlowExpression {
+    /// A protocol invocation such as `http(1)`.
+    Call { protocol: String, request: usize },
+    /// Logical negation.
+    Not(Box<FlowExpression>),
+    /// Logical conjunction.
+    And(Box<FlowExpression>, Box<FlowExpression>),
+    /// Logical disjunction.
+    Or(Box<FlowExpression>, Box<FlowExpression>),
+}
+
+impl FlowExpression {
+    /// Parse a flow expression.
+    ///
+    /// # Errors
+    ///
+    /// Returns a human-readable parse error when the input is invalid.
+    pub fn parse(input: &str) -> std::result::Result<Self, String> {
+        let mut parser = FlowParser::new(input);
+        let expression = parser.parse_expression()?;
+        parser.expect_end()?;
+        Ok(expression)
+    }
+}
+
+impl fmt::Display for FlowExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Call { protocol, request } => write!(f, "{protocol}({request})"),
+            Self::Not(expr) => write!(f, "!({expr})"),
+            Self::And(left, right) => write!(f, "({left} && {right})"),
+            Self::Or(left, right) => write!(f, "({left} || {right})"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FlowParser<'a> {
+    input: &'a str,
+    chars: Vec<char>,
+    pos: usize,
+}
+
+impl<'a> FlowParser<'a> {
+    fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            chars: input.chars().collect(),
+            pos: 0,
+        }
+    }
+
+    fn parse_expression(&mut self) -> std::result::Result<FlowExpression, String> {
+        self.parse_or()
+    }
+
+    fn parse_or(&mut self) -> std::result::Result<FlowExpression, String> {
+        let mut expr = self.parse_and()?;
+        loop {
+            self.skip_ws();
+            if self.consume_str("||") {
+                expr = FlowExpression::Or(Box::new(expr), Box::new(self.parse_and()?));
+            } else {
+                return Ok(expr);
+            }
+        }
+    }
+
+    fn parse_and(&mut self) -> std::result::Result<FlowExpression, String> {
+        let mut expr = self.parse_unary()?;
+        loop {
+            self.skip_ws();
+            if self.consume_str("&&") {
+                expr = FlowExpression::And(Box::new(expr), Box::new(self.parse_unary()?));
+            } else {
+                return Ok(expr);
+            }
+        }
+    }
+
+    fn parse_unary(&mut self) -> std::result::Result<FlowExpression, String> {
+        self.skip_ws();
+        if self.consume_char('!') {
+            return Ok(FlowExpression::Not(Box::new(self.parse_unary()?)));
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> std::result::Result<FlowExpression, String> {
+        self.skip_ws();
+        if self.consume_char('(') {
+            let expr = self.parse_expression()?;
+            self.skip_ws();
+            if !self.consume_char(')') {
+                return Err("missing closing ')' in flow expression".to_string());
+            }
+            return Ok(expr);
+        }
+
+        let protocol = self.parse_identifier()?;
+        self.skip_ws();
+        if !self.consume_char('(') {
+            return Err(format!("expected '(' after protocol '{protocol}'"));
+        }
+
+        self.skip_ws();
+        let request = self.parse_number()?;
+        self.skip_ws();
+        if !self.consume_char(')') {
+            return Err(format!("expected ')' after {protocol}({request}"));
+        }
+
+        Ok(FlowExpression::Call { protocol, request })
+    }
+
+    fn parse_identifier(&mut self) -> std::result::Result<String, String> {
+        self.skip_ws();
+        let start = self.pos;
+        while self
+            .chars
+            .get(self.pos)
+            .is_some_and(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
+        {
+            self.pos += 1;
+        }
+
+        if start == self.pos {
+            return Err(format!(
+                "expected protocol identifier at byte {} in '{}'",
+                self.pos, self.input
+            ));
+        }
+
+        Ok(self.chars[start..self.pos].iter().collect())
+    }
+
+    fn parse_number(&mut self) -> std::result::Result<usize, String> {
+        let start = self.pos;
+        while self
+            .chars
+            .get(self.pos)
+            .is_some_and(char::is_ascii_digit)
+        {
+            self.pos += 1;
+        }
+
+        if start == self.pos {
+            return Err(format!("expected request index at byte {} in '{}'", self.pos, self.input));
+        }
+
+        self.chars[start..self.pos]
+            .iter()
+            .collect::<String>()
+            .parse::<usize>()
+            .map_err(|_| "request index is out of range".to_string())
+    }
+
+    fn expect_end(&mut self) -> std::result::Result<(), String> {
+        self.skip_ws();
+        if self.pos == self.chars.len() {
+            Ok(())
+        } else {
+            Err(format!(
+                "unexpected trailing input starting at byte {} in '{}'",
+                self.pos, self.input
+            ))
+        }
+    }
+
+    fn skip_ws(&mut self) {
+        while self.chars.get(self.pos).is_some_and(|ch| ch.is_whitespace()) {
+            self.pos += 1;
+        }
+    }
+
+    fn consume_char(&mut self, expected: char) -> bool {
+        if self.chars.get(self.pos).copied() == Some(expected) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn consume_str(&mut self, expected: &str) -> bool {
+        let expected_chars: Vec<_> = expected.chars().collect();
+        if self.chars[self.pos..].starts_with(&expected_chars) {
+            self.pos += expected_chars.len();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// A workflow entry point consisting of one or more execution steps.
@@ -624,5 +956,224 @@ mod tests {
             }
             other => panic!("unexpected protocol request: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_nested_flow_expression() {
+        let template = Template {
+            id: "flow-test".to_string(),
+            ir_version: default_ir_version(),
+            extends: None,
+            imports: Vec::new(),
+            info: TemplateInfo {
+                name: "Flow Test".to_string(),
+                author: vec![],
+                severity: Severity::Info,
+                description: None,
+                reference: vec![],
+                tags: vec![],
+                metadata: TemplateMeta::default(),
+            },
+            requests: vec![RequestDef::default()],
+            protocol: Protocol::Http,
+            self_contained: false,
+            variables: HashMap::new(),
+            cli_variables: HashMap::new(),
+            source_path: None,
+            flow: Some("http(1) && (!dns(2) || websocket(3))".to_string()),
+            workflows: Vec::new(),
+            karyx_extensions: HashMap::new(),
+            parallel_groups: Vec::new(),
+        };
+
+        let flow = template.parse_flow().unwrap().unwrap();
+        assert_eq!(flow.to_string(), "(http(1) && (!(dns(2)) || websocket(3)))");
+    }
+
+    #[test]
+    fn invalid_flow_returns_validation_error() {
+        let template = Template {
+            id: "bad-flow".to_string(),
+            ir_version: default_ir_version(),
+            extends: None,
+            imports: Vec::new(),
+            info: TemplateInfo {
+                name: "Bad Flow".to_string(),
+                author: vec![],
+                severity: Severity::Info,
+                description: None,
+                reference: vec![],
+                tags: vec![],
+                metadata: TemplateMeta::default(),
+            },
+            requests: vec![RequestDef::default()],
+            protocol: Protocol::Http,
+            self_contained: false,
+            variables: HashMap::new(),
+            cli_variables: HashMap::new(),
+            source_path: None,
+            flow: Some("http(1 && dns(2)".to_string()),
+            workflows: Vec::new(),
+            karyx_extensions: HashMap::new(),
+            parallel_groups: Vec::new(),
+        };
+
+        let error = template.parse_flow().unwrap_err();
+        assert!(matches!(error, crate::Error::TemplateValidation { .. }));
+    }
+
+    #[test]
+    fn resolve_template_inheritance_merges_parent_fields() {
+        let parent = Template {
+            id: "base".to_string(),
+            ir_version: default_ir_version(),
+            extends: None,
+            imports: vec![TemplateImport {
+                id: "shared".to_string(),
+                alias: None,
+            }],
+            info: TemplateInfo {
+                name: "Base".to_string(),
+                author: vec!["alice".to_string()],
+                severity: Severity::High,
+                description: Some("parent".to_string()),
+                reference: vec!["https://example.com/base".to_string()],
+                tags: vec!["tech".to_string()],
+                metadata: TemplateMeta {
+                    cve_id: vec!["CVE-2026-0001".to_string()],
+                    cwe_id: vec![],
+                    cvss_score: Some(8.8),
+                    extra: HashMap::from([(
+                        "family".to_string(),
+                        serde_json::Value::String("base".to_string()),
+                    )]),
+                },
+            },
+            requests: vec![RequestDef {
+                method: "GET".to_string(),
+                ..RequestDef::default()
+            }],
+            protocol: Protocol::Dns,
+            self_contained: true,
+            variables: HashMap::from([("shared".to_string(), "parent".to_string())]),
+            cli_variables: HashMap::new(),
+            source_path: Some("base.yaml".to_string()),
+            flow: Some("dns(1)".to_string()),
+            workflows: vec![Workflow { steps: vec![] }],
+            karyx_extensions: HashMap::from([(
+                "base".to_string(),
+                serde_json::Value::Bool(true),
+            )]),
+            parallel_groups: vec![ParallelGroup {
+                request_indices: vec![0],
+            }],
+        };
+
+        let child = Template {
+            id: "child".to_string(),
+            ir_version: default_ir_version(),
+            extends: Some("base".to_string()),
+            imports: vec![TemplateImport {
+                id: "child-only".to_string(),
+                alias: None,
+            }],
+            info: TemplateInfo {
+                name: String::new(),
+                author: vec!["bob".to_string()],
+                severity: Severity::Unknown,
+                description: None,
+                reference: vec!["https://example.com/child".to_string()],
+                tags: vec!["detect".to_string()],
+                metadata: TemplateMeta {
+                    cve_id: Vec::new(),
+                    cwe_id: vec!["CWE-79".to_string()],
+                    cvss_score: None,
+                    extra: HashMap::from([(
+                        "family".to_string(),
+                        serde_json::Value::String("child".to_string()),
+                    )]),
+                },
+            },
+            requests: Vec::new(),
+            protocol: Protocol::Http,
+            self_contained: false,
+            variables: HashMap::from([("shared".to_string(), "child".to_string())]),
+            cli_variables: HashMap::from([("runtime".to_string(), "set".to_string())]),
+            source_path: None,
+            flow: None,
+            workflows: Vec::new(),
+            karyx_extensions: HashMap::from([(
+                "child".to_string(),
+                serde_json::Value::Bool(true),
+            )]),
+            parallel_groups: Vec::new(),
+        };
+
+        let templates = HashMap::from([
+            (parent.id.clone(), parent.clone()),
+            (child.id.clone(), child.clone()),
+        ]);
+        let resolved = child.resolve_inheritance(&templates).unwrap();
+
+        assert_eq!(resolved.extends, None);
+        assert_eq!(resolved.info.name, "Base");
+        assert_eq!(resolved.info.author, vec!["alice", "bob"]);
+        assert_eq!(resolved.info.severity, Severity::High);
+        assert_eq!(resolved.requests.len(), 1);
+        assert_eq!(resolved.protocol, Protocol::Dns);
+        assert_eq!(resolved.variables.get("shared").map(String::as_str), Some("child"));
+        assert_eq!(resolved.flow.as_deref(), Some("dns(1)"));
+        assert_eq!(resolved.parallel_groups.len(), 1);
+        assert_eq!(resolved.imports.len(), 2);
+        assert_eq!(
+            resolved
+                .karyx_extensions
+                .get("child")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn resolve_template_inheritance_detects_cycles() {
+        let template_a = Template {
+            id: "a".to_string(),
+            ir_version: default_ir_version(),
+            extends: Some("b".to_string()),
+            imports: Vec::new(),
+            info: TemplateInfo {
+                name: "A".to_string(),
+                author: vec![],
+                severity: Severity::Info,
+                description: None,
+                reference: vec![],
+                tags: vec![],
+                metadata: TemplateMeta::default(),
+            },
+            requests: vec![RequestDef::default()],
+            protocol: Protocol::Http,
+            self_contained: false,
+            variables: HashMap::new(),
+            cli_variables: HashMap::new(),
+            source_path: None,
+            flow: None,
+            workflows: Vec::new(),
+            karyx_extensions: HashMap::new(),
+            parallel_groups: Vec::new(),
+        };
+
+        let template_b = Template {
+            id: "b".to_string(),
+            extends: Some("a".to_string()),
+            ..template_a.clone()
+        };
+
+        let templates = HashMap::from([
+            (template_a.id.clone(), template_a.clone()),
+            (template_b.id.clone(), template_b.clone()),
+        ]);
+
+        let error = template_a.resolve_inheritance(&templates).unwrap_err();
+        assert!(matches!(error, crate::Error::TemplateValidation { .. }));
     }
 }

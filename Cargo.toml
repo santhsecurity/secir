@@ -23,6 +23,7 @@ rustc-hash = "2.1"
 schemars = { version = "0.8", features = ["chrono"], optional = true }
 smallvec = "1"
 toml = "0.8"
+libloading = "0.8"
 
 [features]
 default = []
@@ -30,3 +31,4 @@ json-schema = ["dep:schemars"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+tempfile = "3"

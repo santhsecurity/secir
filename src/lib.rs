@@ -66,9 +66,10 @@ pub use matcher::{Match, MatchDatabase, ResponseData, select_response_part};
 pub use severity::Severity;
 pub use template::{
     AttackType, CodeRequestDef, DnsRequestDef, Encoding, ExtractorDef, ExtractorKind,
-    FileRequestDef, HeadlessRequestDef, HttpRequestDef, IterateConfig, MatchPart, MatcherCondition,
-    MatcherDef, MatcherKind, NetworkInput, NetworkInputType, ParallelGroup, Protocol,
-    ProtocolRequest, RequestDef, SslRequestDef, TcpRequestDef, Template, TemplateId, TemplateInfo,
-    TemplateMeta, Transform, WebsocketRequestDef, WhoisRequestDef, Workflow, WorkflowStep,
+    FileRequestDef, FlowExpression, HeadlessRequestDef, HttpRequestDef, IterateConfig, MatchPart,
+    MatcherCondition, MatcherDef, MatcherKind, NetworkInput, NetworkInputType, ParallelGroup,
+    Protocol, ProtocolRequest, RequestDef, SslRequestDef, TcpRequestDef, Template, TemplateId,
+    TemplateInfo, TemplateMeta, Transform, WebsocketRequestDef, WhoisRequestDef, Workflow,
+    WorkflowStep,
 };
 pub use transport::{RequestPlan, RequestSpec, Response, TargetUrl, Transport};

@@ -274,30 +274,10 @@ impl ComposeContext {
         let Some(ref condition) = step.condition else {
             return true; // No condition = always run
         };
-
-        // Simple condition evaluation
-        let condition = condition.trim();
-
-        // "step_name.matched" — check if a step produced matches
-        if let Some(step_name) = condition.strip_suffix(".matched") {
-            return self.results.get(step_name).is_some_and(|r| r.matched);
-        }
-
-        // "variable != ''" — check if a variable is non-empty
-        if let Some((var, _)) = condition.split_once(" != ''") {
-            let var = var.trim();
-            return self.variables.get(var).is_some_and(|v| !v.is_empty());
-        }
-
-        // "variable == 'value'" — exact match
-        if let Some((var, expected)) = condition.split_once(" == '") {
-            let var = var.trim();
-            let expected = expected.trim_end_matches('\'');
-            return self.variables.get(var).is_some_and(|v| v == expected);
-        }
-
-        // Default: ignore unknown/unsupported conditions and fail securely 
-        false
+        ConditionExpression::parse(condition)
+            .ok()
+            .and_then(|expression| expression.evaluate(self).ok())
+            .unwrap_or(false)
     }
 
     /// Register a step's result.
@@ -306,6 +286,422 @@ impl ComposeContext {
             self.variables.insert(key.clone(), value.clone());
         }
         self.results.insert(step_name.to_string(), result);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ConditionExpression {
+    Value(ConditionValue),
+    Not(Box<ConditionExpression>),
+    And(Box<ConditionExpression>, Box<ConditionExpression>),
+    Or(Box<ConditionExpression>, Box<ConditionExpression>),
+    Compare {
+        left: Box<ConditionExpression>,
+        operator: ConditionOperator,
+        right: Box<ConditionExpression>,
+    },
+}
+
+impl ConditionExpression {
+    fn parse(input: &str) -> Result<Self, String> {
+        let mut parser = ConditionParser::new(input);
+        let expression = parser.parse_expression()?;
+        parser.expect_end()?;
+        Ok(expression)
+    }
+
+    fn evaluate(&self, context: &ComposeContext) -> Result<bool, String> {
+        match self {
+            Self::Value(value) => Ok(value.resolve(context)?.truthy()),
+            Self::Not(expression) => Ok(!expression.evaluate(context)?),
+            Self::And(left, right) => Ok(left.evaluate(context)? && right.evaluate(context)?),
+            Self::Or(left, right) => Ok(left.evaluate(context)? || right.evaluate(context)?),
+            Self::Compare {
+                left,
+                operator,
+                right,
+            } => {
+                let left = left.resolve_value(context)?;
+                let right = right.resolve_value(context)?;
+                Ok(operator.apply(&left, &right))
+            }
+        }
+    }
+
+    fn resolve_value(&self, context: &ComposeContext) -> Result<ResolvedValue, String> {
+        match self {
+            Self::Value(value) => value.resolve(context),
+            Self::Not(_) | Self::And(_, _) | Self::Or(_, _) | Self::Compare { .. } => {
+                Ok(ResolvedValue::Bool(self.evaluate(context)?))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ConditionValue {
+    Identifier(String),
+    String(String),
+    Number(f64),
+}
+
+impl ConditionValue {
+    fn resolve(&self, context: &ComposeContext) -> Result<ResolvedValue, String> {
+        match self {
+            Self::Identifier(name) => resolve_identifier(context, name),
+            Self::String(value) => Ok(ResolvedValue::String(value.clone())),
+            Self::Number(value) => Ok(ResolvedValue::Number(*value)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ResolvedValue {
+    Bool(bool),
+    Number(f64),
+    String(String),
+}
+
+impl ResolvedValue {
+    fn truthy(&self) -> bool {
+        match self {
+            Self::Bool(value) => *value,
+            Self::Number(value) => *value != 0.0,
+            Self::String(value) => !value.is_empty(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConditionOperator {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl ConditionOperator {
+    fn apply(self, left: &ResolvedValue, right: &ResolvedValue) -> bool {
+        use std::cmp::Ordering;
+
+        match self {
+            Self::Eq => compare_values(left, right) == Some(Ordering::Equal),
+            Self::Ne => compare_values(left, right).is_some_and(|ordering| ordering != Ordering::Equal),
+            Self::Lt => compare_values(left, right) == Some(Ordering::Less),
+            Self::Le => compare_values(left, right).is_some_and(|ordering| {
+                matches!(ordering, Ordering::Less | Ordering::Equal)
+            }),
+            Self::Gt => compare_values(left, right) == Some(Ordering::Greater),
+            Self::Ge => compare_values(left, right).is_some_and(|ordering| {
+                matches!(ordering, Ordering::Greater | Ordering::Equal)
+            }),
+        }
+    }
+}
+
+fn compare_values(left: &ResolvedValue, right: &ResolvedValue) -> Option<std::cmp::Ordering> {
+    use std::cmp::Ordering;
+
+    match (left, right) {
+        (ResolvedValue::Bool(left), ResolvedValue::Bool(right)) => Some(left.cmp(right)),
+        (ResolvedValue::Number(left), ResolvedValue::Number(right)) => left.partial_cmp(right),
+        (ResolvedValue::String(left), ResolvedValue::String(right)) => {
+            if let Some(ordering) = compare_version_strings(left, right) {
+                Some(ordering)
+            } else if let (Ok(left), Ok(right)) = (left.parse::<f64>(), right.parse::<f64>()) {
+                left.partial_cmp(&right)
+            } else {
+                Some(left.cmp(right))
+            }
+        }
+        (ResolvedValue::String(left), ResolvedValue::Number(right)) => {
+            left.parse::<f64>().ok()?.partial_cmp(right)
+        }
+        (ResolvedValue::Number(left), ResolvedValue::String(right)) => {
+            left.partial_cmp(&right.parse::<f64>().ok()?)
+        }
+        (ResolvedValue::Bool(left), ResolvedValue::String(right)) => {
+            Some(left.to_string().cmp(&right.to_ascii_lowercase()))
+        }
+        (ResolvedValue::String(left), ResolvedValue::Bool(right)) => {
+            Some(left.to_ascii_lowercase().cmp(&right.to_string()))
+        }
+        _ => Some(Ordering::Equal),
+    }
+}
+
+fn compare_version_strings(left: &str, right: &str) -> Option<std::cmp::Ordering> {
+    let parse = |value: &str| -> Option<Vec<u64>> {
+        if !value.contains('.') {
+            return None;
+        }
+        value
+            .split('.')
+            .map(|part| part.parse::<u64>().ok())
+            .collect::<Option<Vec<_>>>()
+    };
+
+    let left_parts = parse(left)?;
+    let right_parts = parse(right)?;
+    let max_len = left_parts.len().max(right_parts.len());
+
+    for index in 0..max_len {
+        let left = *left_parts.get(index).unwrap_or(&0);
+        let right = *right_parts.get(index).unwrap_or(&0);
+        match left.cmp(&right) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return Some(ordering),
+        }
+    }
+
+    Some(std::cmp::Ordering::Equal)
+}
+
+fn resolve_identifier(context: &ComposeContext, name: &str) -> Result<ResolvedValue, String> {
+    if name.eq_ignore_ascii_case("true") {
+        return Ok(ResolvedValue::Bool(true));
+    }
+    if name.eq_ignore_ascii_case("false") {
+        return Ok(ResolvedValue::Bool(false));
+    }
+
+    if let Some(step_name) = name.strip_suffix(".matched") {
+        return context
+            .results
+            .get(step_name)
+            .map(|result| ResolvedValue::Bool(result.matched))
+            .ok_or_else(|| format!("unknown step '{step_name}'"));
+    }
+
+    if let Some(step_name) = name.strip_suffix(".status") {
+        return context
+            .results
+            .get(step_name)
+            .map(|result| ResolvedValue::Number(f64::from(result.status)))
+            .ok_or_else(|| format!("unknown step '{step_name}'"));
+    }
+
+    if let Some((step_name, field)) = name.split_once('.') {
+        if let Some(result) = context.results.get(step_name) {
+            if let Some(value) = result.extracted.get(field) {
+                return Ok(ResolvedValue::String(value.clone()));
+            }
+        }
+    }
+
+    context
+        .variables
+        .get(name)
+        .cloned()
+        .map(ResolvedValue::String)
+        .ok_or_else(|| format!("unknown identifier '{name}'"))
+}
+
+#[derive(Debug, Clone)]
+struct ConditionParser<'a> {
+    input: &'a str,
+    chars: Vec<char>,
+    pos: usize,
+}
+
+impl<'a> ConditionParser<'a> {
+    fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            chars: input.chars().collect(),
+            pos: 0,
+        }
+    }
+
+    fn parse_expression(&mut self) -> Result<ConditionExpression, String> {
+        self.parse_or()
+    }
+
+    fn parse_or(&mut self) -> Result<ConditionExpression, String> {
+        let mut expression = self.parse_and()?;
+        loop {
+            self.skip_ws();
+            if self.consume_str("||") {
+                expression = ConditionExpression::Or(
+                    Box::new(expression),
+                    Box::new(self.parse_and()?),
+                );
+            } else {
+                return Ok(expression);
+            }
+        }
+    }
+
+    fn parse_and(&mut self) -> Result<ConditionExpression, String> {
+        let mut expression = self.parse_comparison()?;
+        loop {
+            self.skip_ws();
+            if self.consume_str("&&") {
+                expression = ConditionExpression::And(
+                    Box::new(expression),
+                    Box::new(self.parse_comparison()?),
+                );
+            } else {
+                return Ok(expression);
+            }
+        }
+    }
+
+    fn parse_comparison(&mut self) -> Result<ConditionExpression, String> {
+        let left = self.parse_unary()?;
+        self.skip_ws();
+
+        let operator = if self.consume_str("==") {
+            Some(ConditionOperator::Eq)
+        } else if self.consume_str("!=") {
+            Some(ConditionOperator::Ne)
+        } else if self.consume_str("<=") {
+            Some(ConditionOperator::Le)
+        } else if self.consume_str(">=") {
+            Some(ConditionOperator::Ge)
+        } else if self.consume_char('<') {
+            Some(ConditionOperator::Lt)
+        } else if self.consume_char('>') {
+            Some(ConditionOperator::Gt)
+        } else {
+            None
+        };
+
+        if let Some(operator) = operator {
+            Ok(ConditionExpression::Compare {
+                left: Box::new(left),
+                operator,
+                right: Box::new(self.parse_unary()?),
+            })
+        } else {
+            Ok(left)
+        }
+    }
+
+    fn parse_unary(&mut self) -> Result<ConditionExpression, String> {
+        self.skip_ws();
+        if self.consume_char('!') {
+            return Ok(ConditionExpression::Not(Box::new(self.parse_unary()?)));
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> Result<ConditionExpression, String> {
+        self.skip_ws();
+        if self.consume_char('(') {
+            let expression = self.parse_expression()?;
+            self.skip_ws();
+            if !self.consume_char(')') {
+                return Err("missing closing ')' in condition".to_string());
+            }
+            return Ok(expression);
+        }
+
+        if self.peek_char() == Some('\'') {
+            return Ok(ConditionExpression::Value(ConditionValue::String(
+                self.parse_string()?,
+            )));
+        }
+
+        if self.peek_char().is_some_and(|ch| ch.is_ascii_digit()) {
+            return Ok(ConditionExpression::Value(ConditionValue::Number(
+                self.parse_number()?,
+            )));
+        }
+
+        Ok(ConditionExpression::Value(ConditionValue::Identifier(
+            self.parse_identifier()?,
+        )))
+    }
+
+    fn parse_string(&mut self) -> Result<String, String> {
+        self.consume_char('\'');
+        let start = self.pos;
+        while let Some(ch) = self.peek_char() {
+            if ch == '\'' {
+                let value = self.chars[start..self.pos].iter().collect();
+                self.pos += 1;
+                return Ok(value);
+            }
+            self.pos += 1;
+        }
+        Err("unterminated string literal in condition".to_string())
+    }
+
+    fn parse_number(&mut self) -> Result<f64, String> {
+        let start = self.pos;
+        while self
+            .peek_char()
+            .is_some_and(|ch| ch.is_ascii_digit() || ch == '.')
+        {
+            self.pos += 1;
+        }
+        self.chars[start..self.pos]
+            .iter()
+            .collect::<String>()
+            .parse::<f64>()
+            .map_err(|_| "invalid numeric literal in condition".to_string())
+    }
+
+    fn parse_identifier(&mut self) -> Result<String, String> {
+        let start = self.pos;
+        while self.peek_char().is_some_and(|ch| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')
+        }) {
+            self.pos += 1;
+        }
+
+        if start == self.pos {
+            Err(format!(
+                "expected identifier at byte {} in '{}'",
+                self.pos, self.input
+            ))
+        } else {
+            Ok(self.chars[start..self.pos].iter().collect())
+        }
+    }
+
+    fn expect_end(&mut self) -> Result<(), String> {
+        self.skip_ws();
+        if self.pos == self.chars.len() {
+            Ok(())
+        } else {
+            Err(format!(
+                "unexpected trailing input at byte {} in '{}'",
+                self.pos, self.input
+            ))
+        }
+    }
+
+    fn skip_ws(&mut self) {
+        while self.peek_char().is_some_and(char::is_whitespace) {
+            self.pos += 1;
+        }
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.chars.get(self.pos).copied()
+    }
+
+    fn consume_char(&mut self, expected: char) -> bool {
+        if self.peek_char() == Some(expected) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn consume_str(&mut self, expected: &str) -> bool {
+        let expected_chars: Vec<_> = expected.chars().collect();
+        if self.chars[self.pos..].starts_with(&expected_chars) {
+            self.pos += expected_chars.len();
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -623,7 +1019,7 @@ mod tests {
         // Create a chain of 50 dependent steps
         for i in 0..50 {
             let step = ComposeStep {
-                step: format!("step_{}", i),
+                step: format!("step_{i}"),
                 condition: None,
                 depends: if i == 0 {
                     vec![]
@@ -636,11 +1032,11 @@ mod tests {
 
             if i == 0 {
                 assert!(ctx.dependencies_met(&step));
-                ctx.complete_step(&format!("step_{}", i), StepResult::default());
+                ctx.complete_step(&format!("step_{i}"), StepResult::default());
             } else {
                 // Each step depends on previous
                 if ctx.dependencies_met(&step) {
-                    ctx.complete_step(&format!("step_{}", i), StepResult::default());
+                    ctx.complete_step(&format!("step_{i}"), StepResult::default());
                 }
             }
         }
@@ -718,19 +1114,41 @@ mod tests {
             },
         );
 
-        // Current implementation doesn't support version comparison operators
-        // This test documents the gap
         let step = ComposeStep {
             step: "check_version".to_string(),
-            condition: Some("version < '6.0'".to_string()), // Not supported
+            condition: Some("version < '6.0'".to_string()),
             depends: vec![],
             parallel: false,
             action: StepAction::Http(HttpStepConfig::default()),
         };
 
-        // Version comparison operators not yet supported — fails closed
-        let result = ctx.condition_met(&step);
-        assert!(!result, "unsupported operators should fail closed");
+        assert!(ctx.condition_met(&step));
+    }
+
+    #[test]
+    fn boolean_condition_supports_and_or_and_parentheses() {
+        let mut ctx = ComposeContext::default();
+        ctx.complete_step(
+            "detect",
+            StepResult {
+                matched: true,
+                status: 200,
+                extracted: [("version".to_string(), "5.9".to_string())]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            },
+        );
+
+        let step = ComposeStep {
+            step: "complex".to_string(),
+            condition: Some("(detect.matched && version <= '6.0') || detect.status == 404".into()),
+            depends: vec![],
+            parallel: false,
+            action: StepAction::Http(HttpStepConfig::default()),
+        };
+
+        assert!(ctx.condition_met(&step));
     }
 
     /// TEST 9: Step output passed to next step
