@@ -133,7 +133,7 @@ impl PatternSet {
                 }
             };
             let path = entry.path();
-            if !path.is_file() || path.extension().map_or(true, |e| e != "toml") {
+            if !path.is_file() || path.extension().is_none_or(|e| e != "toml") {
                 continue;
             }
             let content = match fs::read_to_string(&path) {
